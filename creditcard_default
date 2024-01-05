@@ -1,0 +1,68 @@
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml import Pipeline
+from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+
+data = spark.read.option("header", "true").option("inferSchema", "true").csv("default_of_credit_card_clients.csv")
+# Selecting relevant columns
+selected_columns = data.select(['LIMIT_BAL','default_payment_next_month','SEX','EDUCATION','MARRIAGE','AGE','PAY_0','PAY_2','PAY_3'])
+selected_columns.show(5)
+feature_columns = ['LIMIT_BAL', 'SEX', 'EDUCATION', 'MARRIAGE', 'AGE', 'PAY_0', 'PAY_2', 'PAY_3']
+assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
+lr = LogisticRegression(featuresCol="features", labelCol="default_payment_next_month")
+final_columns= selected_columns.na.drop()
+final_columns.count()
+# Create a pipeline
+pipeline = Pipeline(stages=[assembler, lr])
+# Split the data into training and testing sets
+train_data, test_data = final_columns.randomSplit([0.8, 0.2], seed=42)
+# Define hyperparameter grid for tuning
+param_grid = ParamGridBuilder().addGrid(lr.regParam, [0.1, 0.01]).addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0]).build()
+# Define evaluator
+evaluator = BinaryClassificationEvaluator(labelCol="default_payment_next_month")
+cross_validator = CrossValidator(estimator=pipeline, estimatorParamMaps=param_grid, evaluator=evaluator, numFolds=3, seed=42)
+# Fit the model
+lr_model = cross_validator.fit(train_data)
+# Make predictions on the test set
+predictions = lr_model.transform(test_data)
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+#Evaluate the model using AUC
+area_under_curve = evaluator.evaluate(predictions)
+area_under_curve
+
+
+# exploring additional evaluation metrics such as precision, recall, F1-score, and accuracy 
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+# Evaluate the model using multiple metrics
+evaluator_multiclass = MulticlassClassificationEvaluator(labelCol="default_payment_next_month",predictionCol="prediction",metricName="accuracy")
+# Calculate and print additional metrics
+accuracy = evaluator_multiclass.evaluate(predictions, {evaluator_multiclass.metricName: "accuracy"})
+precision = evaluator_multiclass.evaluate(predictions, {evaluator_multiclass.metricName: "precisionByLabel"})
+recall = evaluator_multiclass.evaluate(predictions, {evaluator_multiclass.metricName: "recallByLabel"})
+f1 = evaluator_multiclass.evaluate(predictions, {evaluator_multiclass.metricName: "f1"})
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1-score: {f1:.4f}")
+
+import numpy as np
+# Get the coefficients and intercept
+coefficients = lr_model.bestModel.stages[1].coefficients
+intercept = lr_model.bestModel.stages[1].intercept
+# Convert coefficients to a compatible data type
+coefficients = [float(coeff) for coeff in coefficients]
+# Get the feature names
+feature_names = feature_columns
+# Create a DataFrame to display the coefficients
+coefficients_df = spark.createDataFrame(zip(feature_names, coefficients), ["Feature", "Coefficient"])
+# Display the coefficients
+coefficients_df.show()
+
+# LIMIT_BAL: It has a negative importance, indicating that as the credit limit increases, the likelihood of default decreases.
+# SEX and EDUCATION: Both have importance scores of 0.0, suggesting that, based on the model, they may not significantly contribute to predicting default.
+# MARRIAGE: "MARRIAGE" status is 1 (which typically represents being married), a one-unit increase in the "MARRIAGE" status (e.g., moving from being single to being married) would lead to a decrease in the log-odds of the likelihood of default by approximately 0.0326 units. It has a small negative importance
+# AGE: It has a small positive importance, suggesting a slight positive correlation with the likelihood of default, but the impact seems relatively weak.
+# PAY_0, PAY_2, PAY_3: These payment status features have positive importance, indicating that recent payment behavior is a significant predictor of default.
+# PAY_0 (Repayment Status in September): This feature has the highest positive importance, indicating it is the most important feature for predicting default. A higher positive value suggests a stronger positive impact on the likelihood of default.
