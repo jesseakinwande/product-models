@@ -30,7 +30,7 @@ To utilize this project effectively, follow the steps outlined below:
 1. Download the Dataset:
    - Visit the [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients).
    - Download the dataset files from the provided links.
-   - convert from xls format to csv, remove the descriptive row and load the dataset
+   - convert from xls format to csv, remove the descriptive row and load the dataset or simply download from github 
 
 2. Run the Jupyter Notebooks:
    - Open the Jupyter Notebooks containing the analysis and modeling code.
